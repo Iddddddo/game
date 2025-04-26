@@ -1,6 +1,5 @@
 import arcade
 import os
-import time
 
 # Константы игры
 WIDTH = 1280
@@ -8,202 +7,246 @@ HEIGHT = 768
 TITLE = "Mini Adventure"
 
 SCALE_PLAYER = 0.02
-SCALE_COIN = 0.05
-
-SPEED = 60
+SCALE_LILYPAD = 0.5
+SPEED = 5
 GRAVITY = 1
 JUMP_SPEED = 22
 
-# Стартовые позиции игрока
-LEVEL_START_POSITIONS = {
-    1: (37, 120),
-    2: (200, 400)
-}
-
-class Player(arcade.Sprite):
-    def __init__(self, texture_right, texture_left, scale=1):
-        super().__init__()
-        self.texture_right = texture_right
-        self.texture_left = texture_left
-        self.scale = scale
-        self.texture = texture_right
-        self.speed = 5
-        self.jumping = False
-        self.on_ground = False
-        self.facing_right = True
-
-    def respawn(self, level):
-        start_x, start_y = LEVEL_START_POSITIONS[level]
-        self.center_x = start_x
-        self.center_y = start_y
-        self.change_x = 0
-        self.change_y = 0
-        self.facing_right = True
-        self.texture = self.texture_right
+# Настройки кувшинок
+LILYPAD_DISAPPEAR_DELAY = 2.0
+LILYPAD_REAPPEAR_DELAY = 5.0
 
 class MyGame(arcade.Window):
     def __init__(self, width, height, title):
         super().__init__(width, height, title)
         
-        # Инициализация спрайт-листов
-        self.scene = None
+        # Спрайтлисты
+        self.background_list = arcade.SpriteList()
         self.player_list = arcade.SpriteList()
-        self.physics_engine = None
-        self.bg_sprites = arcade.SpriteList()
+        self.platforms_list = arcade.SpriteList()
+        self.hazards_list = arcade.SpriteList()
+        self.portal_list = arcade.SpriteList()
+        self.lilypads_list = arcade.SpriteList()
+        self.active_lilypads = arcade.SpriteList()
         
-        # Установка рабочей директории
+        self.current_level = 1
+        self.physics_engine = None
+        self.lilypads_data = {}
+        
         file_path = os.path.dirname(os.path.abspath(__file__))
         os.chdir(file_path)
         
-        # Загрузка текстур
-        try:
-            self.bg1 = arcade.load_texture("images/loc1.png")
-            self.bg2 = arcade.load_texture("images/loc2.png")
-            player_texture_right = arcade.load_texture("images/big2.png")
-            player_texture_left = arcade.load_texture("images/big2z.png")
-            
-            self.player = Player(player_texture_right, player_texture_left, SCALE_PLAYER)
-            self.player_list.append(self.player)
-            
-        except FileNotFoundError as e:
-            print(f"Ошибка загрузки текстур: {e}")
-            raise
-        
-        # Загрузка первого уровня
-        self.current_level = 1
+        print("Инициализация игры...")  # Отладочный вывод
         self.setup_level(1)
         
-        # Управление
         self.left_pressed = False
         self.right_pressed = False
         self.space_pressed = False
 
     def setup_level(self, level_num):
-        """Загрузка уровня"""
+        print(f"Загрузка уровня {level_num}...")  # Отладочный вывод
         self.current_level = level_num
-        self.bg = self.bg1 if level_num == 1 else self.bg2
         
+        # Очистка спрайтлистов
+        self.background_list.clear()
+        self.player_list.clear()
+        self.platforms_list.clear()
+        self.hazards_list.clear()
+        self.portal_list.clear()
+        self.lilypads_list.clear()
+        self.active_lilypads.clear()
+        self.lilypads_data = {}
+        
+        # Загрузка фона с проверкой
         try:
-            # Настройка слоёв карты
+            background = arcade.Sprite(f"images/loc{level_num}.png")
+            background.center_x = WIDTH // 2
+            background.center_y = HEIGHT // 2
+            background.width = WIDTH
+            background.height = HEIGHT
+            self.background_list.append(background)
+            print("Фон успешно загружен")  # Отладочный вывод
+        except Exception as e:
+            print(f"Ошибка загрузки фона: {e}")  # Отладочный вывод
+        
+        # Создание игрока с проверкой
+        try:
+            player = arcade.Sprite("images/big2.png", SCALE_PLAYER)
+            start_x, start_y = (100, 300) if level_num == 1 else (50, 380)
+            player.center_x = start_x
+            player.center_y = start_y
+            self.player_list.append(player)
+            print("Игрок успешно создан")  # Отладочный вывод
+        except Exception as e:
+            print(f"Ошибка создания игрока: {e}")  # Отладочный вывод
+        
+        # Загрузка карты Tiled с проверкой
+        try:
             layer_options = {
                 "Platforms": {"use_spatial_hash": True},
                 "Spikes": {"use_spatial_hash": True},
                 "water": {"use_spatial_hash": True},
-                "portal": {"use_spatial_hash": True} if level_num == 1 else {},
-                "plains": {"use_spatial_hash": True} if level_num == 2 else {}
+                "portal": {"use_spatial_hash": True},
+                "plains": {"use_spatial_hash": True},
+                "Walls": {"use_spatial_hash": True}
             }
             
-            # Загрузка тайл-карты
             map_path = f"maps/map{level_num}.json"
-            if not os.path.exists(map_path):
-                raise FileNotFoundError(f"Файл карты {map_path} не найден")
-            
+            print(f"Попытка загрузки карты: {map_path}")  # Отладочный вывод
             self.tile_map = arcade.load_tilemap(map_path, scaling=1.0, layer_options=layer_options)
-            self.scene = arcade.Scene.from_tilemap(self.tile_map)
+            print("Карта успешно загружена")  # Отладочный вывод
             
-            # Добавление игрока
-            self.player.respawn(level_num)
-            self.player_list.clear()
-            self.player_list.append(self.player)
+            # Распределение объектов по слоям с проверкой
+            if "Platforms" in self.tile_map.sprite_lists:
+                self.platforms_list.extend(self.tile_map.sprite_lists["Platforms"])
+                print(f"Загружено платформ: {len(self.platforms_list)}")  # Отладочный вывод
             
-            # Настройка физического движка
-            platforms = self.tile_map.sprite_lists.get("Platforms", arcade.SpriteList())
-            self.physics_engine = arcade.PhysicsEnginePlatformer(
-                self.player,
-                platforms=platforms,
-                gravity_constant=GRAVITY,
-                walls=[self.scene["Walls"]] if "Walls" in self.tile_map.sprite_lists else None
-            )
+            if "Spikes" in self.tile_map.sprite_lists:
+                self.hazards_list.extend(self.tile_map.sprite_lists["Spikes"])
+                print(f"Загружено шипов: {len(self.hazards_list)}")  # Отладочный вывод
             
-            # Настройка фона
-            self.bg_sprites.clear()
-            bg_sprite = arcade.Sprite()
-            bg_sprite.texture = self.bg
-            bg_sprite.center_x = WIDTH // 2
-            bg_sprite.center_y = HEIGHT // 2
-            bg_sprite.width = WIDTH
-            bg_sprite.height = HEIGHT
-            self.bg_sprites.append(bg_sprite)
+            if "water" in self.tile_map.sprite_lists:
+                self.hazards_list.extend(self.tile_map.sprite_lists["water"])
+                print(f"Загружено воды: {len(self.hazards_list)-len(self.tile_map.sprite_lists['Spikes'])}")  # Отладочный вывод
             
-            print(f"Уровень {level_num} загружен успешно")
-            print(f"Загружено слоёв: {len(self.tile_map.sprite_lists)}")
+            if "portal" in self.tile_map.sprite_lists:
+                self.portal_list.extend(self.tile_map.sprite_lists["portal"])
+                print(f"Загружено порталов: {len(self.portal_list)}")  # Отладочный вывод
+            
+            # Инициализация кувшинок с проверкой
+            if "plains" in self.tile_map.sprite_lists:
+                try:
+                    lilypad_texture = arcade.load_texture("images/lilypad.png")
+                    print("Текстура кувшинки загружена")  # Отладочный вывод
+                    
+                    for lilypad in self.tile_map.sprite_lists["plains"]:
+                        new_lilypad = arcade.Sprite(lilypad_texture, SCALE_LILYPAD)
+                        new_lilypad.position = lilypad.position
+                        new_lilypad.width = lilypad.width
+                        new_lilypad.height = lilypad.height
+                        new_lilypad.alpha = 255
+                        
+                        self.lilypads_list.append(new_lilypad)
+                        self.active_lilypads.append(new_lilypad)
+                        self.lilypads_data[new_lilypad] = {
+                            'active': True,
+                            'touch_time': 0.0,
+                            'disappear_time': 0.0
+                        }
+                    
+                    print(f"Загружено кувшинок: {len(self.lilypads_list)}")  # Отладочный вывод
+                except Exception as e:
+                    print(f"Ошибка загрузки кувшинок: {e}")  # Отладочный вывод
             
         except Exception as e:
-            print(f"Ошибка загрузки уровня {level_num}: {e}")
-            raise
+            print(f"Ошибка загрузки карты: {e}")  # Отладочный вывод
+        
+        self.update_physics_engine()
+        print("Уровень загружен")  # Отладочный вывод
+
+    def update_physics_engine(self):
+        all_platforms = arcade.SpriteList()
+        all_platforms.extend(self.platforms_list)
+        
+        if self.current_level == 2:
+            all_platforms.extend(self.active_lilypads)
+        
+        try:
+            self.physics_engine = arcade.PhysicsEnginePlatformer(
+                self.player_list[0] if len(self.player_list) > 0 else None,
+                platforms=all_platforms,
+                gravity_constant=GRAVITY,
+                walls=self.tile_map.sprite_lists.get("Walls", None)
+            )
+            print("Физический движок обновлен")  # Отладочный вывод
+        except Exception as e:
+            print(f"Ошибка инициализации физики: {e}")  # Отладочный вывод
 
     def on_draw(self):
-        """Отрисовка сцены"""
         self.clear()
         
-        # Отрисовка фона
-        self.bg_sprites.draw()
-        
-        # Отрисовка тайлмапа
-        if hasattr(self, 'tile_map'):
-            for sprite_list in self.tile_map.sprite_lists.values():
-                sprite_list.draw()
-        
-        # Отрисовка игрока
-        self.player_list.draw()
-        
-        # Отрисовка интерфейса
-        arcade.draw_text(f"Уровень: {self.current_level}", 10, 10, arcade.color.WHITE, 24)
+        # Рисуем все объекты через спрайтлисты
+        try:
+            self.background_list.draw()
+            self.platforms_list.draw()
+            self.hazards_list.draw()
+            self.portal_list.draw()
+            self.active_lilypads.draw()
+            self.player_list.draw()
+            
+            # Отладочная информация
+            arcade.draw_text(f"Уровень: {self.current_level}", 10, HEIGHT - 30, arcade.color.WHITE, 24)
+        except Exception as e:
+            print(f"Ошибка отрисовки: {e}")  # Отладочный вывод
 
     def on_update(self, delta_time):
-        """Обновление игры"""
-        if self.physics_engine:
-            # Проверка границ экрана
-            if self.player.left < 0:
-                self.player.left = 0
-            if self.player.right > WIDTH:
-                self.player.right = WIDTH
-            if self.player.bottom < 0:
-                self.player.respawn(self.current_level)
+        if len(self.player_list) == 0:
+            return
             
-            # Проверка перехода на уровень 2
-            if self.current_level == 1:
-                portal_list = self.tile_map.sprite_lists.get("portal", None)
-                if portal_list and arcade.check_for_collision_with_list(self.player, portal_list):
-                    self.setup_level(2)
-                    return
-            
-            # Проверка опасностей
-            water_list = self.tile_map.sprite_lists.get("water", None)
-            spikes_list = self.tile_map.sprite_lists.get("Spikes", None)
-            
-            if water_list and arcade.check_for_collision_with_list(self.player, water_list):
-                self.player.respawn(self.current_level)
-            if spikes_list and arcade.check_for_collision_with_list(self.player, spikes_list):
-                self.player.respawn(self.current_level)
-            
-            # Обновление физики
-            self.physics_engine.update()
+        player = self.player_list[0]
         
-        # Управление игроком
-        self.player.change_x = 0
+        # Проверка перехода на уровень 2
+        if self.current_level == 1 and len(self.portal_list) > 0:
+            if arcade.check_for_collision_with_list(player, self.portal_list):
+                self.setup_level(2)
+                return
         
+        # Проверка опасностей
+        if len(self.hazards_list) > 0:
+            if arcade.check_for_collision_with_list(player, self.hazards_list):
+                self.setup_level(self.current_level)
+                return
+        
+        # Механика кувшинок
+        if self.current_level == 2 and len(self.lilypads_list) > 0:
+            need_update = False
+            for lilypad in self.lilypads_list:
+                data = self.lilypads_data[lilypad]
+                
+                if not data['active']:
+                    data['disappear_time'] += delta_time
+                    if data['disappear_time'] >= LILYPAD_REAPPEAR_DELAY:
+                        data['active'] = True
+                        data['disappear_time'] = 0.0
+                        lilypad.alpha = 255
+                        if lilypad not in self.active_lilypads:
+                            self.active_lilypads.append(lilypad)
+                        need_update = True
+                    continue
+                
+                if arcade.check_for_collision(player, lilypad):
+                    data['touch_time'] += delta_time
+                    if data['touch_time'] >= LILYPAD_DISAPPEAR_DELAY:
+                        data['active'] = False
+                        data['touch_time'] = 0.0
+                        lilypad.alpha = 0
+                        if lilypad in self.active_lilypads:
+                            self.active_lilypads.remove(lilypad)
+                        need_update = True
+                else:
+                    data['touch_time'] = 0.0
+            
+            if need_update:
+                self.update_physics_engine()
+        
+        # Управление
+        player.change_x = 0
         if self.left_pressed:
-            self.player.change_x = -self.player.speed
-            self.player.texture = self.player.texture_left
-            self.player.facing_right = False
-            
+            player.change_x = -SPEED
         if self.right_pressed:
-            self.player.change_x = self.player.speed
-            self.player.texture = self.player.texture_right
-            self.player.facing_right = True
-            
-        if self.space_pressed and self.physics_engine.can_jump():
-            self.player.change_y = JUMP_SPEED
-            self.space_pressed = False
+            player.change_x = SPEED
+        if self.space_pressed and self.physics_engine and self.physics_engine.can_jump():
+            player.change_y = JUMP_SPEED
+        
+        if self.physics_engine:
+            self.physics_engine.update()
 
-    # Остальные методы без изменений
     def on_key_press(self, key, modifiers):
         if key in (arcade.key.LEFT, arcade.key.A):
             self.left_pressed = True
         elif key in (arcade.key.RIGHT, arcade.key.D):
             self.right_pressed = True
-        elif key in (arcade.key.SPACE, arcade.key.UP, arcade.key.W):
+        elif key == arcade.key.SPACE:
             self.space_pressed = True
 
     def on_key_release(self, key, modifiers):
@@ -211,13 +254,12 @@ class MyGame(arcade.Window):
             self.left_pressed = False
         elif key in (arcade.key.RIGHT, arcade.key.D):
             self.right_pressed = False
-        elif key in (arcade.key.SPACE, arcade.key.UP, arcade.key.W):
+        elif key == arcade.key.SPACE:
             self.space_pressed = False
 
 if __name__ == "__main__":
-    print(f"Используется Arcade версии {arcade.__version__}")
-    
     try:
+        print("Запуск игры...")  # Отладочный вывод
         game = MyGame(WIDTH, HEIGHT, TITLE)
         arcade.run()
     except Exception as e:
