@@ -31,9 +31,9 @@ class MyGame(arcade.Window):
         
         # Состояние монеток
         self.coin_positions = {
-            1: [(300, 400), (600, 500), (900, 450)],
+            1: [(300, 400), (600, 500), (900, 250)],
             2: [(350, 300), (700, 400), (950, 350)],
-            3: [(400, 200), (750, 300), (1000, 250)]  # Монетки для 3 уровня
+            3: [(400, 200), (750, 300), (1000, 250)]
         }
         self.collected_coins = {1: set(), 2: set(), 3: set()}
         
@@ -43,7 +43,7 @@ class MyGame(arcade.Window):
         self.jump_sound = None
         self.coin_sound = None
         
-        # Предзагруженные текстуры
+        # Текстуры
         self.preloaded_textures = {
             'player_right': None,
             'player_left': None,
@@ -59,8 +59,10 @@ class MyGame(arcade.Window):
         
         # Статистика игрока
         self.player_scale = 0.02
-        self.death_count = 0
         self.initial_scale = 0.02
+        self.min_scale = 0.005
+        self.max_scale = 0.02
+        self.death_count = 0
         self.coins_collected = 0
         self.total_coins = 3
         
@@ -98,11 +100,11 @@ class MyGame(arcade.Window):
             self.preloaded_textures['player_left'] = arcade.load_texture("images/big2z.png")
             self.preloaded_textures['lilypad'] = arcade.load_texture("images/lilypad.png")
             self.preloaded_textures['coin'] = arcade.load_texture("images/coin.png")
-            self.preloaded_textures['portal'] = arcade.load_texture("images/portal.png")  # Текстура портала
+            self.preloaded_textures['portal'] = arcade.load_texture("images/portal.png")
         except Exception as e:
             print(f"Ошибка загрузки текстур: {e}")
 
-        for level in [1, 2, 3]:  # Добавлен 3 уровень
+        for level in [1, 2, 3]:
             path = f"images/loc{level}.png"
             if os.path.exists(path):
                 try:
@@ -118,8 +120,8 @@ class MyGame(arcade.Window):
     def create_lilypads(self):
         """Создание платформ-лилий для второго уровня"""
         lily_positions = [
-            (400, 250),
-            (650, 350),
+            (480, 250),
+            (600, 250),
             (900, 300)
         ]
         
@@ -143,7 +145,7 @@ class MyGame(arcade.Window):
         self.portal_list.append(portal)
 
     def create_coins(self, reset_coins=False):
-        """Создание монеток для уровня с учетом уже собранных"""
+        """Создание монеток для уровня"""
         self.coins_list.clear()
         
         if reset_coins:
@@ -170,7 +172,7 @@ class MyGame(arcade.Window):
         self.game_state = "MENU"
         self.menu_background_list.clear()
         
-        # Полный сброс при возврате в меню
+        # Сброс параметров
         self.player_scale = self.initial_scale
         self.death_count = 0
         self.coins_collected = 0
@@ -216,29 +218,18 @@ class MyGame(arcade.Window):
         map_path = f"maps/map{level_num}.json"
         if os.path.exists(map_path):
             try:
-                # Настройки слоев для разных уровней
-                if level_num == 3:
-                    layer_options = {
-                        "Platforms": {"use_spatial_hash": True},
-                        "platforms": {"use_spatial_hash": True},
-                        "Spikes": {"use_spatial_hash": True},
-                        "spikes": {"use_spatial_hash": True},
-                        "Back": {"use_spatial_hash": False},
-                        "back": {"use_spatial_hash": False}
-                    }
-                else:
-                    layer_options = {
-                        "Platforms": {"use_spatial_hash": True},
-                        "platforms": {"use_spatial_hash": True},
-                        "Back": {"use_spatial_hash": False},
-                        "back": {"use_spatial_hash": False},
-                        "Spikes": {"use_spatial_hash": True},
-                        "spikes": {"use_spatial_hash": True},
-                        "Portal": {"use_spatial_hash": True} if level_num == 1 else {},
-                        "portal": {"use_spatial_hash": True} if level_num == 1 else {},
-                        "Water": {"use_spatial_hash": True} if level_num == 2 else {},
-                        "water": {"use_spatial_hash": True} if level_num == 2 else {}
-                    }
+                layer_options = {
+                    "Platforms": {"use_spatial_hash": True},
+                    "platforms": {"use_spatial_hash": True},
+                    "Spikes": {"use_spatial_hash": True},
+                    "spikes": {"use_spatial_hash": True},
+                    "Back": {"use_spatial_hash": False},
+                    "back": {"use_spatial_hash": False},
+                    "Portal": {"use_spatial_hash": True} if level_num in [1, 2] else {},
+                    "portal": {"use_spatial_hash": True} if level_num in [1, 2] else {},
+                    "Water": {"use_spatial_hash": True} if level_num == 2 else {},
+                    "water": {"use_spatial_hash": True} if level_num == 2 else {}
+                }
                 
                 tilemap = arcade.load_tilemap(map_path, scaling=1.0, layer_options=layer_options)
                 
@@ -250,7 +241,7 @@ class MyGame(arcade.Window):
                         self.back_decor_list = tilemap.sprite_lists[layer]
                     elif "spike" in lower_layer:
                         self.spikes_list = tilemap.sprite_lists[layer]
-                    elif "portal" in lower_layer and level_num in [1, 2]:  # Портал на 1 и 2 уровнях
+                    elif "portal" in lower_layer and level_num in [1, 2]:
                         self.portal_list = tilemap.sprite_lists[layer]
                     elif "water" in lower_layer and level_num == 2:
                         self.water_list = tilemap.sprite_lists[layer]
@@ -261,7 +252,7 @@ class MyGame(arcade.Window):
         if level_num == 2:
             self.create_lilypads()
             
-        # Создание портала на втором уровне (если нет в тайлмапе)
+        # Создание портала на втором уровне
         if level_num == 2 and not self.portal_list:
             self.create_portal(1100, 400)
 
@@ -274,14 +265,14 @@ class MyGame(arcade.Window):
             player.texture = self.preloaded_textures['player_right']
             player.scale = self.player_scale
             
-            # Стартовые позиции для разных уровней
+            # Стартовые позиции
             if level_num == 1:
                 player.center_x = 100
                 player.center_y = 400
             elif level_num == 2:
                 player.center_x = 50
                 player.center_y = 380
-            else:  # Уровень 3
+            else:
                 player.center_x = 100
                 player.center_y = 400
                 
@@ -323,6 +314,7 @@ class MyGame(arcade.Window):
             if self.menu_background_list:
                 self.menu_background_list.draw()
             
+            # Отрисовка кнопки
             points = [
                 (self.button_x - self.button_width/2, self.button_y - self.button_height/2),
                 (self.button_x + self.button_width/2, self.button_y - self.button_height/2),
@@ -377,6 +369,7 @@ class MyGame(arcade.Window):
             if self.player_list:
                 self.player_list.draw()
             
+            # Отображение статистики
             debug_info = [
                 f"Уровень: {self.current_level}",
                 f"Размер: {self.player_scale:.3f}",
@@ -388,6 +381,7 @@ class MyGame(arcade.Window):
                 arcade.draw_text(text, 10, HEIGHT - 30 - i*30, arcade.color.WHITE, 16)
 
     def on_update(self, delta_time):
+        """Логика игры"""
         if self.game_state == "MENU":
             self.animation_time += delta_time
             self.button_angle = math.sin(self.animation_time * 2) * 5
@@ -397,6 +391,7 @@ class MyGame(arcade.Window):
             
             prev_facing = self.player_facing_right
             
+            # Управление игроком
             player.change_x = 0
             if arcade.key.LEFT in self.held_keys:
                 player.change_x = -PLAYER_SPEED
@@ -408,11 +403,13 @@ class MyGame(arcade.Window):
             if prev_facing != self.player_facing_right:
                 self.update_player_texture()
             
+            # Границы экрана
             if player.left < 0:
                 player.left = 0
             if player.right > WIDTH:
                 player.right = WIDTH
             
+            # Обновление физики
             if self.physics_engine:
                 self.physics_engine.update()
                 player.can_jump = self.physics_engine.can_jump()
@@ -420,11 +417,12 @@ class MyGame(arcade.Window):
             self.handle_collisions()
 
     def handle_collisions(self):
+        """Обработка столкновений"""
         if not self.player_list:
             return
             
         player = self.player_list[0]
-        
+    
         # Сбор монеток
         coins_hit = arcade.check_for_collision_with_list(player, self.coins_list)
         for coin in coins_hit:
@@ -435,17 +433,14 @@ class MyGame(arcade.Window):
             if self.death_count > 0:
                 self.death_count -= 1
             
-            self.player_scale += 0.015
+            # Увеличение размера игрока на 0.005, но не более max_scale (0.02)
+            self.player_scale = min(self.player_scale + 0.005, self.max_scale)
             player.scale = self.player_scale
             
             if self.coin_sound:
                 arcade.play_sound(self.coin_sound)
-            
-            if self.player_scale > self.initial_scale:
-                self.player_scale = self.initial_scale
-                player.scale = self.initial_scale
-        
-        # Переход на уровень 2 при сборе всех монеток на уровне 1
+    
+        # Переход на уровень 2
         if (self.current_level == 1 and 
             len(self.collected_coins[1]) == self.total_coins and 
             self.portal_list and 
@@ -453,7 +448,7 @@ class MyGame(arcade.Window):
             self.load_level(2)
             return
             
-        # Переход на уровень 3 через портал на уровне 2
+        # Переход на уровень 3
         if (self.current_level == 2 and 
             self.portal_list and 
             arcade.check_for_collision_with_list(player, self.portal_list)):
@@ -463,7 +458,7 @@ class MyGame(arcade.Window):
         # Столкновение с опасностями
         if self.spikes_list and arcade.check_for_collision_with_list(player, self.spikes_list):
             self.death_count += 1
-            self.player_scale -= 0.001
+            self.player_scale = max(self.player_scale - 0.005, self.min_scale)
             player.scale = self.player_scale
             
             if self.death_count >= 3:
@@ -471,11 +466,11 @@ class MyGame(arcade.Window):
             else:
                 self.load_level(self.current_level, reset_coins=False)
             return
-        
+    
         if self.current_level == 2 and self.water_list:
             if arcade.check_for_collision_with_list(player, self.water_list):
                 self.death_count += 1
-                self.player_scale -= 0.001
+                self.player_scale = max(self.player_scale - 0.005, self.min_scale)
                 player.scale = self.player_scale
                 
                 if self.death_count >= 3:
@@ -485,6 +480,7 @@ class MyGame(arcade.Window):
                 return
 
     def on_mouse_press(self, x, y, button, modifiers):
+        """Обработка клика мыши"""
         if self.game_state == "MENU" and button == arcade.MOUSE_BUTTON_LEFT:
             half_width = self.button_width / 2
             half_height = self.button_height / 2
@@ -501,6 +497,7 @@ class MyGame(arcade.Window):
                 self.load_level(1, reset_coins=True)
 
     def on_key_press(self, key, modifiers):
+        """Обработка нажатия клавиш"""
         self.held_keys.add(key)
         
         if (key == arcade.key.SPACE and 
@@ -515,6 +512,7 @@ class MyGame(arcade.Window):
                 arcade.play_sound(self.jump_sound)
 
     def on_key_release(self, key, modifiers):
+        """Обработка отпускания клавиш"""
         if key in self.held_keys:
             self.held_keys.remove(key)
 
