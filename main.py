@@ -29,20 +29,13 @@ class MyGame(arcade.Window):
         self.lilypads_list = arcade.SpriteList()
         self.coins_list = arcade.SpriteList()
         
-        # Состояние монеток (для сохранения после смерти)
+        # Состояние монеток
         self.coin_positions = {
-            1: [
-                (300, 400), 
-                (600, 500), 
-                (900, 250)
-                ],
-            2: [
-                (350, 300),
-                (700, 400), 
-                (950, 350)
-                ]
+            1: [(300, 400), (600, 500), (900, 450)],
+            2: [(350, 300), (700, 400), (950, 350)],
+            3: [(400, 200), (750, 300), (1000, 250)]  # Монетки для 3 уровня
         }
-        self.collected_coins = {1: set(), 2: set()}  # Храним индексы собранных монет
+        self.collected_coins = {1: set(), 2: set(), 3: set()}
         
         # Звуки
         self.game_music = None
@@ -57,7 +50,8 @@ class MyGame(arcade.Window):
             'backgrounds': {},
             'menu_bg': None,
             'lilypad': None,
-            'coin': None
+            'coin': None,
+            'portal': None
         }
         
         # Направление игрока
@@ -104,10 +98,11 @@ class MyGame(arcade.Window):
             self.preloaded_textures['player_left'] = arcade.load_texture("images/big2z.png")
             self.preloaded_textures['lilypad'] = arcade.load_texture("images/lilypad.png")
             self.preloaded_textures['coin'] = arcade.load_texture("images/coin.png")
+            self.preloaded_textures['portal'] = arcade.load_texture("images/portal.png")  # Текстура портала
         except Exception as e:
             print(f"Ошибка загрузки текстур: {e}")
 
-        for level in [1, 2]:
+        for level in [1, 2, 3]:  # Добавлен 3 уровень
             path = f"images/loc{level}.png"
             if os.path.exists(path):
                 try:
@@ -123,9 +118,9 @@ class MyGame(arcade.Window):
     def create_lilypads(self):
         """Создание платформ-лилий для второго уровня"""
         lily_positions = [
-            (480, 250),
-            (600, 250),
-            (450, 50)
+            (400, 250),
+            (650, 350),
+            (900, 300)
         ]
         
         for x, y in lily_positions:
@@ -137,6 +132,15 @@ class MyGame(arcade.Window):
             self.lilypads_list.append(lilypad)
         
         self.platforms_list.extend(self.lilypads_list)
+
+    def create_portal(self, x, y):
+        """Создание портала на уровне"""
+        portal = arcade.Sprite()
+        portal.texture = self.preloaded_textures['portal']
+        portal.center_x = x
+        portal.center_y = y
+        portal.scale = 0.5
+        self.portal_list.append(portal)
 
     def create_coins(self, reset_coins=False):
         """Создание монеток для уровня с учетом уже собранных"""
@@ -153,7 +157,7 @@ class MyGame(arcade.Window):
                 coin.center_x = x
                 coin.center_y = y
                 coin.scale = 0.05
-                coin.index = i  # Сохраняем индекс монетки
+                coin.index = i
                 self.coins_list.append(coin)
 
     def start_music(self):
@@ -170,7 +174,8 @@ class MyGame(arcade.Window):
         self.player_scale = self.initial_scale
         self.death_count = 0
         self.coins_collected = 0
-        self.collected_coins = {1: set(), 2: set()}
+        self.collected_coins = {1: set(), 2: set(), 3: set()}
+        self.current_level = 1
         
         if self.preloaded_textures['menu_bg']:
             bg = arcade.Sprite()
@@ -211,18 +216,29 @@ class MyGame(arcade.Window):
         map_path = f"maps/map{level_num}.json"
         if os.path.exists(map_path):
             try:
-                layer_options = {
-                    "Platforms": {"use_spatial_hash": True},
-                    "platforms": {"use_spatial_hash": True},
-                    "Back": {"use_spatial_hash": False},
-                    "back": {"use_spatial_hash": False},
-                    "Spikes": {"use_spatial_hash": True},
-                    "spikes": {"use_spatial_hash": True},
-                    "Portal": {"use_spatial_hash": True} if level_num == 1 else {},
-                    "portal": {"use_spatial_hash": True} if level_num == 1 else {},
-                    "Water": {"use_spatial_hash": True},
-                    "water": {"use_spatial_hash": True}
-                }
+                # Настройки слоев для разных уровней
+                if level_num == 3:
+                    layer_options = {
+                        "Platforms": {"use_spatial_hash": True},
+                        "platforms": {"use_spatial_hash": True},
+                        "Spikes": {"use_spatial_hash": True},
+                        "spikes": {"use_spatial_hash": True},
+                        "Back": {"use_spatial_hash": False},
+                        "back": {"use_spatial_hash": False}
+                    }
+                else:
+                    layer_options = {
+                        "Platforms": {"use_spatial_hash": True},
+                        "platforms": {"use_spatial_hash": True},
+                        "Back": {"use_spatial_hash": False},
+                        "back": {"use_spatial_hash": False},
+                        "Spikes": {"use_spatial_hash": True},
+                        "spikes": {"use_spatial_hash": True},
+                        "Portal": {"use_spatial_hash": True} if level_num == 1 else {},
+                        "portal": {"use_spatial_hash": True} if level_num == 1 else {},
+                        "Water": {"use_spatial_hash": True} if level_num == 2 else {},
+                        "water": {"use_spatial_hash": True} if level_num == 2 else {}
+                    }
                 
                 tilemap = arcade.load_tilemap(map_path, scaling=1.0, layer_options=layer_options)
                 
@@ -234,7 +250,7 @@ class MyGame(arcade.Window):
                         self.back_decor_list = tilemap.sprite_lists[layer]
                     elif "spike" in lower_layer:
                         self.spikes_list = tilemap.sprite_lists[layer]
-                    elif "portal" in lower_layer and level_num == 1:
+                    elif "portal" in lower_layer and level_num in [1, 2]:  # Портал на 1 и 2 уровнях
                         self.portal_list = tilemap.sprite_lists[layer]
                     elif "water" in lower_layer and level_num == 2:
                         self.water_list = tilemap.sprite_lists[layer]
@@ -244,8 +260,12 @@ class MyGame(arcade.Window):
         # Создание лилий для второго уровня
         if level_num == 2:
             self.create_lilypads()
+            
+        # Создание портала на втором уровне (если нет в тайлмапе)
+        if level_num == 2 and not self.portal_list:
+            self.create_portal(1100, 400)
 
-        # Создание монеток (с учетом уже собранных)
+        # Создание монеток
         self.create_coins(reset_coins)
 
         # Создание игрока
@@ -253,8 +273,18 @@ class MyGame(arcade.Window):
             player = arcade.Sprite()
             player.texture = self.preloaded_textures['player_right']
             player.scale = self.player_scale
-            player.center_x = 100 if level_num == 1 else 50
-            player.center_y = 400 if level_num == 1 else 380
+            
+            # Стартовые позиции для разных уровней
+            if level_num == 1:
+                player.center_x = 100
+                player.center_y = 400
+            elif level_num == 2:
+                player.center_x = 50
+                player.center_y = 380
+            else:  # Уровень 3
+                player.center_x = 100
+                player.center_y = 400
+                
             self.player_list.append(player)
             self.player_facing_right = True
         else:
@@ -339,7 +369,7 @@ class MyGame(arcade.Window):
                 if self.lilypads_list:
                     self.lilypads_list.draw()
             
-            if self.current_level == 1 and self.portal_list:
+            if self.portal_list:
                 self.portal_list.draw()
             
             self.coins_list.draw()
@@ -402,11 +432,9 @@ class MyGame(arcade.Window):
             self.collected_coins[self.current_level].add(coin.index)
             self.coins_collected += 1
             
-            # Уменьшаем счетчик смертей (если он не равен нулю)
             if self.death_count > 0:
                 self.death_count -= 1
             
-            # Увеличиваем размер игрока сразу
             self.player_scale += 0.015
             player.scale = self.player_scale
             
@@ -417,24 +445,30 @@ class MyGame(arcade.Window):
                 self.player_scale = self.initial_scale
                 player.scale = self.initial_scale
         
-        # Переход на уровень 2 при сборе всех монеток
+        # Переход на уровень 2 при сборе всех монеток на уровне 1
         if (self.current_level == 1 and 
             len(self.collected_coins[1]) == self.total_coins and 
             self.portal_list and 
             arcade.check_for_collision_with_list(player, self.portal_list)):
             self.load_level(2)
             return
+            
+        # Переход на уровень 3 через портал на уровне 2
+        if (self.current_level == 2 and 
+            self.portal_list and 
+            arcade.check_for_collision_with_list(player, self.portal_list)):
+            self.load_level(3)
+            return
                 
         # Столкновение с опасностями
         if self.spikes_list and arcade.check_for_collision_with_list(player, self.spikes_list):
             self.death_count += 1
-            self.player_scale -= 0.005
+            self.player_scale -= 0.001
             player.scale = self.player_scale
             
             if self.death_count >= 3:
-                self.setup_menu()  # Полный сброс
+                self.setup_menu()
             else:
-                # Перезагрузка уровня без сброса монеток
                 self.load_level(self.current_level, reset_coins=False)
             return
         
@@ -445,9 +479,8 @@ class MyGame(arcade.Window):
                 player.scale = self.player_scale
                 
                 if self.death_count >= 3:
-                    self.setup_menu()  # Полный сброс
+                    self.setup_menu()
                 else:
-                    # Перезагрузка уровня без сброса монеток
                     self.load_level(2, reset_coins=False)
                 return
 
@@ -465,7 +498,7 @@ class MyGame(arcade.Window):
             
             if (-half_width < rotated_x < half_width and 
                 -half_height < rotated_y < half_height):
-                self.load_level(1, reset_coins=True)  # Полный сброс при старте уровня
+                self.load_level(1, reset_coins=True)
 
     def on_key_press(self, key, modifiers):
         self.held_keys.add(key)
