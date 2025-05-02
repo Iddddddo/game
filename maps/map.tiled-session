@@ -69,11 +69,11 @@
             }
         },
         "map3.json": {
-            "scale": 1,
-            "selectedLayer": 0,
+            "scale": 2,
+            "selectedLayer": 2,
             "viewCenter": {
-                "x": 640,
-                "y": 384.5
+                "x": 996,
+                "y": 542.75
             }
         },
         "map3.json#cave": {

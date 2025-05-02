@@ -1,6 +1,7 @@
 import arcade
 import math
 import os
+import time
 
 # Константы
 WIDTH, HEIGHT = 1280, 768
@@ -28,7 +29,9 @@ class MyGame(arcade.Window):
         self.water_list = arcade.SpriteList()
         self.lilypads_list = arcade.SpriteList()
         self.coins_list = arcade.SpriteList()
-        
+        self.end_list = arcade.SpriteList()
+        self.intro_player_list = arcade.SpriteList()  # Новый спрайтлист для игрока в интро
+
         # Состояние монеток
         self.coin_positions = {
             1: [(300, 400), (600, 500), (900, 250)],
@@ -66,17 +69,19 @@ class MyGame(arcade.Window):
         self.coins_collected = 0
         self.total_coins = 3
         
-        # Предзагрузка ресурсов
-        self.preload_resources()
-        
-        # Параметры меню
-        self.game_state = "MENU"
+        # Состояния игры
+        self.game_state = "MENU"  # MENU, INTRO, GAME, VICTORY
         self.current_level = 1
         self.animation_time = 0
+        self.fade_alpha = 0
+        self.intro_time = 0
+        self.victory_time = 0
+        
+        # Управление
         self.held_keys = set()
         self.physics_engine = None
         
-        # Параметры кнопки
+        # Параметры кнопки/текста
         self.button_x = WIDTH // 2
         self.button_y = HEIGHT // 2
         self.button_width = 300
@@ -84,41 +89,55 @@ class MyGame(arcade.Window):
         self.button_angle = 0
         
         self.setup_menu()
+        self.preload_resources()
         self.start_music()
 
     def preload_resources(self):
         """Предзагрузка всех необходимых ресурсов"""
+        # Создаем папки если их нет
+        os.makedirs("images", exist_ok=True)
+        os.makedirs("sounds", exist_ok=True)
+        os.makedirs("maps", exist_ok=True)
+
+        # Загрузка звуков
         try:
-            self.game_music = arcade.load_sound("sounds/menu.wav")
-            self.jump_sound = arcade.load_sound("sounds/jump.wav")
-            self.coin_sound = arcade.load_sound("sounds/coin.wav")
+            if os.path.exists("sounds/menu.wav"):
+                self.game_music = arcade.load_sound("sounds/menu.wav")
+            if os.path.exists("sounds/jump.wav"):
+                self.jump_sound = arcade.load_sound("sounds/jump.wav")
+            if os.path.exists("sounds/coin.wav"):
+                self.coin_sound = arcade.load_sound("sounds/coin.wav")
         except Exception as e:
             print(f"Ошибка загрузки звуков: {e}")
 
+        # Загрузка текстур
         try:
-            self.preloaded_textures['player_right'] = arcade.load_texture("images/big2.png")
-            self.preloaded_textures['player_left'] = arcade.load_texture("images/big2z.png")
-            self.preloaded_textures['lilypad'] = arcade.load_texture("images/lilypad.png")
-            self.preloaded_textures['coin'] = arcade.load_texture("images/coin.png")
-            self.preloaded_textures['portal'] = arcade.load_texture("images/portal.png")
+            if os.path.exists("images/big2.png"):
+                self.preloaded_textures['player_right'] = arcade.load_texture("images/big2.png")
+            if os.path.exists("images/big2z.png"):
+                self.preloaded_textures['player_left'] = arcade.load_texture("images/big2z.png")
+            if os.path.exists("images/lilypad.png"):
+                self.preloaded_textures['lilypad'] = arcade.load_texture("images/lilypad.png")
+            if os.path.exists("images/coin.png"):
+                self.preloaded_textures['coin'] = arcade.load_texture("images/coin.png")
+            if os.path.exists("images/portal.png"):
+                self.preloaded_textures['portal'] = arcade.load_texture("images/portal.png")
+            if os.path.exists("images/menu.png"):
+                self.preloaded_textures['menu_bg'] = arcade.load_texture("images/menu.png")
+            
+            for level in [1, 2, 3]:
+                path = f"images/loc{level}.png"
+                if os.path.exists(path):
+                    self.preloaded_textures['backgrounds'][level] = arcade.load_texture(path)
         except Exception as e:
             print(f"Ошибка загрузки текстур: {e}")
 
-        for level in [1, 2, 3]:
-            path = f"images/loc{level}.png"
-            if os.path.exists(path):
-                try:
-                    self.preloaded_textures['backgrounds'][level] = arcade.load_texture(path)
-                except Exception as e:
-                    print(f"Ошибка загрузки фона уровня {level}: {e}")
-
-        try:
-            self.preloaded_textures['menu_bg'] = arcade.load_texture("images/menu.png")
-        except Exception as e:
-            print(f"Ошибка загрузки фона меню: {e}")
-
     def create_lilypads(self):
         """Создание платформ-лилий для второго уровня"""
+        if not self.preloaded_textures['lilypad']:
+            print("Текстура лилии не загружена!")
+            return
+            
         lily_positions = [
             (480, 250),
             (600, 250),
@@ -137,6 +156,10 @@ class MyGame(arcade.Window):
 
     def create_portal(self, x, y):
         """Создание портала на уровне"""
+        if not self.preloaded_textures['portal']:
+            print("Текстура портала не загружена!")
+            return
+            
         portal = arcade.Sprite()
         portal.texture = self.preloaded_textures['portal']
         portal.center_x = x
@@ -146,6 +169,10 @@ class MyGame(arcade.Window):
 
     def create_coins(self, reset_coins=False):
         """Создание монеток для уровня"""
+        if not self.preloaded_textures['coin']:
+            print("Текстура монетки не загружена!")
+            return
+            
         self.coins_list.clear()
         
         if reset_coins:
@@ -166,11 +193,15 @@ class MyGame(arcade.Window):
         """Запуск музыки"""
         if self.game_music and not self.music_player:
             self.music_player = arcade.play_sound(self.game_music, loop=True)
+        elif self.music_player and not self.game_music:
+            arcade.stop_sound(self.music_player)
+            self.music_player = None
 
     def setup_menu(self):
         """Инициализация меню"""
         self.game_state = "MENU"
         self.menu_background_list.clear()
+        self.intro_player_list.clear()  # Очищаем спрайт игрока в интро
         
         # Сброс параметров
         self.player_scale = self.initial_scale
@@ -178,15 +209,42 @@ class MyGame(arcade.Window):
         self.coins_collected = 0
         self.collected_coins = {1: set(), 2: set(), 3: set()}
         self.current_level = 1
+        self.fade_alpha = 0
         
+        # Загрузка фона меню
         if self.preloaded_textures['menu_bg']:
             bg = arcade.Sprite()
             bg.texture = self.preloaded_textures['menu_bg']
             bg.width = WIDTH
             bg.height = HEIGHT
-            bg.center_x = WIDTH//2
-            bg.center_y = HEIGHT//2
+            bg.center_x = WIDTH // 2
+            bg.center_y = HEIGHT // 2
             self.menu_background_list.append(bg)
+        else:
+            self.background_color = arcade.color.BLACK
+        
+        self.start_music()
+
+    def show_intro(self):
+        """Показать вступительную сцену"""
+        self.game_state = "INTRO"
+        self.intro_time = time.time()
+        self.fade_alpha = 0
+        
+        # Создаем спрайт игрока для интро
+        if self.preloaded_textures['player_right']:
+            player = arcade.Sprite()
+            player.texture = self.preloaded_textures['player_right']
+            player.scale = 0.1
+            player.center_x = WIDTH // 2
+            player.center_y = HEIGHT // 2
+            self.intro_player_list.append(player)
+
+    def show_victory(self):
+        """Показать сцену победы"""
+        self.game_state = "VICTORY"
+        self.victory_time = time.time()
+        self.fade_alpha = 0
 
     def load_level(self, level_num, reset_coins=False):
         """Загрузка уровня"""
@@ -194,25 +252,28 @@ class MyGame(arcade.Window):
         self.current_level = level_num
         
         # Очистка списков
-        self.background_list = arcade.SpriteList()
-        self.back_decor_list = arcade.SpriteList()
-        self.player_list = arcade.SpriteList()
-        self.platforms_list = arcade.SpriteList()
-        self.portal_list = arcade.SpriteList()
-        self.spikes_list = arcade.SpriteList()
-        self.water_list = arcade.SpriteList()
-        self.lilypads_list = arcade.SpriteList()
-        self.coins_list = arcade.SpriteList()
+        self.background_list.clear()
+        self.back_decor_list.clear()
+        self.player_list.clear()
+        self.platforms_list.clear()
+        self.portal_list.clear()
+        self.spikes_list.clear()
+        self.water_list.clear()
+        self.lilypads_list.clear()
+        self.coins_list.clear()
+        self.end_list.clear()
 
         # Загрузка фона
-        if level_num in self.preloaded_textures['backgrounds']:
+        if level_num in self.preloaded_textures['backgrounds'] and self.preloaded_textures['backgrounds'][level_num]:
             bg = arcade.Sprite()
             bg.texture = self.preloaded_textures['backgrounds'][level_num]
             bg.width = WIDTH
             bg.height = HEIGHT
-            bg.center_x = WIDTH//2
-            bg.center_y = HEIGHT//2
+            bg.center_x = WIDTH // 2
+            bg.center_y = HEIGHT // 2
             self.background_list.append(bg)
+        else:
+            self.background_color = arcade.color.SKY_BLUE
 
         # Загрузка карты
         map_path = f"maps/map{level_num}.json"
@@ -228,7 +289,9 @@ class MyGame(arcade.Window):
                     "Portal": {"use_spatial_hash": True} if level_num in [1, 2] else {},
                     "portal": {"use_spatial_hash": True} if level_num in [1, 2] else {},
                     "Water": {"use_spatial_hash": True} if level_num == 2 else {},
-                    "water": {"use_spatial_hash": True} if level_num == 2 else {}
+                    "water": {"use_spatial_hash": True} if level_num == 2 else {},
+                    "End": {"use_spatial_hash": True} if level_num == 3 else {},
+                    "end": {"use_spatial_hash": True} if level_num == 3 else {}
                 }
                 
                 tilemap = arcade.load_tilemap(map_path, scaling=1.0, layer_options=layer_options)
@@ -236,15 +299,17 @@ class MyGame(arcade.Window):
                 for layer in tilemap.sprite_lists:
                     lower_layer = layer.lower()
                     if "platform" in lower_layer:
-                        self.platforms_list = tilemap.sprite_lists[layer]
+                        self.platforms_list.extend(tilemap.sprite_lists[layer])
                     elif "back" in lower_layer:
-                        self.back_decor_list = tilemap.sprite_lists[layer]
+                        self.back_decor_list.extend(tilemap.sprite_lists[layer])
                     elif "spike" in lower_layer:
-                        self.spikes_list = tilemap.sprite_lists[layer]
+                        self.spikes_list.extend(tilemap.sprite_lists[layer])
                     elif "portal" in lower_layer and level_num in [1, 2]:
-                        self.portal_list = tilemap.sprite_lists[layer]
+                        self.portal_list.extend(tilemap.sprite_lists[layer])
                     elif "water" in lower_layer and level_num == 2:
-                        self.water_list = tilemap.sprite_lists[layer]
+                        self.water_list.extend(tilemap.sprite_lists[layer])
+                    elif "end" in lower_layer and level_num == 3:
+                        self.end_list.extend(tilemap.sprite_lists[layer])
             except Exception as e:
                 print(f"Ошибка загрузки карты: {e}")
 
@@ -307,12 +372,11 @@ class MyGame(arcade.Window):
                 player.texture = self.preloaded_textures['player_left']
 
     def on_draw(self):
-        """Отрисовка"""
+        """Отрисовка игры"""
         self.clear()
         
         if self.game_state == "MENU":
-            if self.menu_background_list:
-                self.menu_background_list.draw()
+            self.menu_background_list.draw()
             
             # Отрисовка кнопки
             points = [
@@ -342,43 +406,70 @@ class MyGame(arcade.Window):
                 bold=True
             )
             
+        elif self.game_state == "INTRO":
+            arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, arcade.color.BLACK)
+            
+            # Отрисовка игрока через спрайтлист
+            self.intro_player_list.draw()
+            
+            arcade.draw_text(
+                "Я должна собрать рассыпанные амулеты\nи отнести их домой,\nчтобы предотвратить страшное",
+                WIDTH // 2, HEIGHT // 2 + 100,
+                arcade.color.WHITE, 24,
+                anchor_x="center", anchor_y="center",
+                align="center",
+                bold=True
+            )
+            
+            if self.fade_alpha > 0:
+                arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, (0, 0, 0, self.fade_alpha))
+            
         elif self.game_state == "GAME":
-            if self.background_list:
-                self.background_list.draw()
-            
-            if self.back_decor_list:
-                self.back_decor_list.draw()
-            
-            if self.platforms_list:
-                self.platforms_list.draw()
-            
-            if self.spikes_list:
-                self.spikes_list.draw()
+            self.background_list.draw()
+            self.back_decor_list.draw()
+            self.platforms_list.draw()
+            self.spikes_list.draw()
             
             if self.current_level == 2:
-                if self.water_list:
-                    self.water_list.draw()
-                if self.lilypads_list:
-                    self.lilypads_list.draw()
+                self.water_list.draw()
+                self.lilypads_list.draw()
             
-            if self.portal_list:
-                self.portal_list.draw()
-            
+            self.portal_list.draw()
+            self.end_list.draw()
             self.coins_list.draw()
+            self.player_list.draw()
             
-            if self.player_list:
-                self.player_list.draw()
+            # Статистика
+            arcade.draw_text(
+                f"Уровень: {self.current_level}", 10, HEIGHT - 30, 
+                arcade.color.WHITE, 16
+            )
+            arcade.draw_text(
+                f"Размер: {self.player_scale:.3f}", 10, HEIGHT - 60, 
+                arcade.color.WHITE, 16
+            )
+            arcade.draw_text(
+                f"Смерти: {self.death_count}/3", 10, HEIGHT - 90, 
+                arcade.color.WHITE, 16
+            )
+            arcade.draw_text(
+                f"Монетки: {len(self.collected_coins[self.current_level])}/{self.total_coins}", 
+                10, HEIGHT - 120, arcade.color.WHITE, 16
+            )
+        
+        elif self.game_state == "VICTORY":
+            arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, arcade.color.BLACK)
             
-            # Отображение статистики
-            debug_info = [
-                f"Уровень: {self.current_level}",
-                f"Размер: {self.player_scale:.3f}",
-                f"Смерти: {self.death_count}/3",
-                f"Монетки: {len(self.collected_coins[self.current_level])}/{self.total_coins}"
-            ]
+            arcade.draw_text(
+                "Победа, вы спасли мир!",
+                WIDTH // 2, HEIGHT // 2,
+                arcade.color.WHITE, 40,
+                anchor_x="center", anchor_y="center",
+                bold=True
+            )
             
-            for i, text in enumerate(debug_info):
-                arcade.draw_text(text, 10, HEIGHT - 30 - i*30, arcade.color.WHITE, 16)
+            if self.fade_alpha > 0:
+                arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, (0, 0, 0, self.fade_alpha))
 
     def on_update(self, delta_time):
         """Логика игры"""
@@ -386,13 +477,18 @@ class MyGame(arcade.Window):
             self.animation_time += delta_time
             self.button_angle = math.sin(self.animation_time * 2) * 5
         
+        elif self.game_state == "INTRO":
+            if time.time() - self.intro_time > 3:
+                self.fade_alpha += 2
+                if self.fade_alpha >= 255:
+                    self.load_level(1, reset_coins=True)
+        
         elif self.game_state == "GAME" and self.player_list:
             player = self.player_list[0]
             
             prev_facing = self.player_facing_right
-            
-            # Управление игроком
             player.change_x = 0
+            
             if arcade.key.LEFT in self.held_keys:
                 player.change_x = -PLAYER_SPEED
                 self.player_facing_right = False
@@ -403,18 +499,20 @@ class MyGame(arcade.Window):
             if prev_facing != self.player_facing_right:
                 self.update_player_texture()
             
-            # Границы экрана
             if player.left < 0:
                 player.left = 0
             if player.right > WIDTH:
                 player.right = WIDTH
             
-            # Обновление физики
             if self.physics_engine:
                 self.physics_engine.update()
                 player.can_jump = self.physics_engine.can_jump()
             
             self.handle_collisions()
+        
+        elif self.game_state == "VICTORY":
+            if time.time() - self.victory_time > 3:
+                self.setup_menu()
 
     def handle_collisions(self):
         """Обработка столкновений"""
@@ -433,7 +531,6 @@ class MyGame(arcade.Window):
             if self.death_count > 0:
                 self.death_count -= 1
             
-            # Увеличение размера игрока на 0.005, но не более max_scale (0.02)
             self.player_scale = min(self.player_scale + 0.005, self.max_scale)
             player.scale = self.player_scale
             
@@ -457,27 +554,30 @@ class MyGame(arcade.Window):
                 
         # Столкновение с опасностями
         if self.spikes_list and arcade.check_for_collision_with_list(player, self.spikes_list):
-            self.death_count += 1
-            self.player_scale = max(self.player_scale - 0.005, self.min_scale)
-            player.scale = self.player_scale
-            
-            if self.death_count >= 3:
-                self.setup_menu()
-            else:
-                self.load_level(self.current_level, reset_coins=False)
+            self.handle_hazard_collision()
             return
     
         if self.current_level == 2 and self.water_list:
             if arcade.check_for_collision_with_list(player, self.water_list):
-                self.death_count += 1
-                self.player_scale = max(self.player_scale - 0.005, self.min_scale)
-                player.scale = self.player_scale
-                
-                if self.death_count >= 3:
-                    self.setup_menu()
-                else:
-                    self.load_level(2, reset_coins=False)
+                self.handle_hazard_collision()
                 return
+        
+        # Проверка на завершение уровня
+        if self.current_level == 3 and self.end_list:
+            if arcade.check_for_collision_with_list(player, self.end_list):
+                self.show_victory()
+
+    def handle_hazard_collision(self):
+        """Обработка столкновения с опасностью"""
+        player = self.player_list[0]
+        self.death_count += 1
+        self.player_scale = max(self.player_scale - 0.005, self.min_scale)
+        player.scale = self.player_scale
+        
+        if self.death_count >= 3:
+            self.setup_menu()
+        else:
+            self.load_level(self.current_level, reset_coins=False)
 
     def on_mouse_press(self, x, y, button, modifiers):
         """Обработка клика мыши"""
@@ -494,7 +594,7 @@ class MyGame(arcade.Window):
             
             if (-half_width < rotated_x < half_width and 
                 -half_height < rotated_y < half_height):
-                self.load_level(1, reset_coins=True)
+                self.show_intro()
 
     def on_key_press(self, key, modifiers):
         """Обработка нажатия клавиш"""
