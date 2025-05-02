@@ -6,8 +6,8 @@ import os
 WIDTH, HEIGHT = 1280, 768
 TITLE = "Mini Adventure"
 PLAYER_SPEED = 5
-JUMP_FORCE = 21
-GRAVITY = 0.9
+JUMP_FORCE = 21  # Увеличенная сила прыжка
+GRAVITY = 0.9    # Увеличенная гравитация
 
 class MyGame(arcade.Window):
     def __init__(self, width, height, title):
@@ -27,11 +27,13 @@ class MyGame(arcade.Window):
         self.spikes_list = arcade.SpriteList()
         self.water_list = arcade.SpriteList()
         self.lilypads_list = arcade.SpriteList()
+        self.coins_list = arcade.SpriteList()
         
         # Звуки
         self.game_music = None
         self.music_player = None
         self.jump_sound = None
+        self.coin_sound = None
         
         # Предзагруженные текстуры
         self.preloaded_textures = {
@@ -39,16 +41,19 @@ class MyGame(arcade.Window):
             'player_left': None,
             'backgrounds': {},
             'menu_bg': None,
-            'lilypad': None
+            'lilypad': None,
+            'coin': None
         }
         
         # Направление игрока
         self.player_facing_right = True
         
         # Статистика игрока
-        self.player_scale = 0.02  # Начальный размер игрока
-        self.death_count = 0      # Счетчик смертей
-        self.initial_scale = 0.02  # Исходный размер для сброса
+        self.player_scale = 0.02
+        self.death_count = 0
+        self.initial_scale = 0.02
+        self.coins_collected = 0
+        self.total_coins = 3
         
         # Предзагрузка ресурсов
         self.preload_resources()
@@ -75,6 +80,7 @@ class MyGame(arcade.Window):
         try:
             self.game_music = arcade.load_sound("sounds/menu.wav")
             self.jump_sound = arcade.load_sound("sounds/jump.wav")
+            self.coin_sound = arcade.load_sound("sounds/coin.wav")
         except Exception as e:
             print(f"Ошибка загрузки звуков: {e}")
 
@@ -82,6 +88,7 @@ class MyGame(arcade.Window):
             self.preloaded_textures['player_right'] = arcade.load_texture("images/big2.png")
             self.preloaded_textures['player_left'] = arcade.load_texture("images/big2z.png")
             self.preloaded_textures['lilypad'] = arcade.load_texture("images/lilypad.png")
+            self.preloaded_textures['coin'] = arcade.load_texture("images/coin.png")
         except Exception as e:
             print(f"Ошибка загрузки текстур: {e}")
 
@@ -101,9 +108,9 @@ class MyGame(arcade.Window):
     def create_lilypads(self):
         """Создание платформ-лилий для второго уровня"""
         lily_positions = [
-            (480, 250),
-            (600, 250),
-            (900, 500)
+            (400, 250),
+            (650, 350),
+            (900, 300)
         ]
         
         for x, y in lily_positions:
@@ -111,10 +118,38 @@ class MyGame(arcade.Window):
             lilypad.texture = self.preloaded_textures['lilypad']
             lilypad.center_x = x
             lilypad.center_y = y
-            lilypad.scale = 0.1
+            lilypad.scale = 0.1  # Масштаб кувшинок 0.1
             self.lilypads_list.append(lilypad)
         
         self.platforms_list.extend(self.lilypads_list)
+
+    def create_coins(self):
+        """Создание монеток для уровня"""
+        self.coins_list.clear()
+        self.coins_collected = 0
+        
+        # Координаты монеток для разных уровней
+        coin_positions = {
+            1: [
+                (300, 400),
+                (600, 500),
+                (900, 450)
+            ],
+            2: [
+                (350, 300),
+                (700, 400),
+                (950, 350)
+            ]
+        }
+        
+        if self.current_level in coin_positions:
+            for x, y in coin_positions[self.current_level]:
+                coin = arcade.Sprite()
+                coin.texture = self.preloaded_textures['coin']
+                coin.center_x = x
+                coin.center_y = y
+                coin.scale = 0.05  # Масштаб монеток 0.05
+                self.coins_list.append(coin)
 
     def start_music(self):
         """Запуск музыки"""
@@ -126,9 +161,9 @@ class MyGame(arcade.Window):
         self.game_state = "MENU"
         self.menu_background_list.clear()
         
-        # Сброс статистики при возврате в меню
         self.player_scale = self.initial_scale
         self.death_count = 0
+        self.coins_collected = 0
         
         if self.preloaded_textures['menu_bg']:
             bg = arcade.Sprite()
@@ -140,7 +175,7 @@ class MyGame(arcade.Window):
             self.menu_background_list.append(bg)
 
     def load_level(self, level_num):
-        """Загрузка уровня с использованием предзагруженных ресурсов"""
+        """Загрузка уровня"""
         self.game_state = "GAME"
         self.current_level = level_num
         
@@ -153,6 +188,7 @@ class MyGame(arcade.Window):
         self.spikes_list = arcade.SpriteList()
         self.water_list = arcade.SpriteList()
         self.lilypads_list = arcade.SpriteList()
+        self.coins_list = arcade.SpriteList()
 
         # Загрузка фона
         if level_num in self.preloaded_textures['backgrounds']:
@@ -202,13 +238,16 @@ class MyGame(arcade.Window):
         if level_num == 2:
             self.create_lilypads()
 
-        # Создание игрока с учетом текущего размера
+        # Создание монеток
+        self.create_coins()
+
+        # Создание игрока
         if self.preloaded_textures['player_right']:
             player = arcade.Sprite()
             player.texture = self.preloaded_textures['player_right']
             player.scale = self.player_scale
-            player.center_x = 35 if level_num == 1 else 50
-            player.center_y = 100 if level_num == 1 else 380
+            player.center_x = 100 if level_num == 1 else 50
+            player.center_y = 400 if level_num == 1 else 380
             self.player_list.append(player)
             self.player_facing_right = True
         else:
@@ -217,7 +256,7 @@ class MyGame(arcade.Window):
             player.center_y = 400
             self.player_list.append(player)
 
-        # Инициализация физического движка
+        # Физический движок
         if self.player_list and (self.platforms_list or self.lilypads_list):
             self.physics_engine = arcade.PhysicsEnginePlatformer(
                 self.player_list[0],
@@ -226,7 +265,7 @@ class MyGame(arcade.Window):
             )
 
     def update_player_texture(self):
-        """Обновление текстуры игрока в зависимости от направления"""
+        """Обновление текстуры игрока"""
         if not self.player_list:
             return
             
@@ -296,6 +335,8 @@ class MyGame(arcade.Window):
             if self.current_level == 1 and self.portal_list:
                 self.portal_list.draw()
             
+            self.coins_list.draw()
+            
             if self.player_list:
                 self.player_list.draw()
             
@@ -303,8 +344,7 @@ class MyGame(arcade.Window):
                 f"Уровень: {self.current_level}",
                 f"Размер: {self.player_scale:.3f}",
                 f"Смерти: {self.death_count}/3",
-                f"Платформы: {len(self.platforms_list)}",
-                f"Лилии: {len(self.lilypads_list)}"
+                f"Монетки: {self.coins_collected}/{self.total_coins}"
             ]
             
             for i, text in enumerate(debug_info):
@@ -348,14 +388,40 @@ class MyGame(arcade.Window):
             
         player = self.player_list[0]
         
+        # Сбор монеток
+        coins_hit = arcade.check_for_collision_with_list(player, self.coins_list)
+        for coin in coins_hit:
+            coin.remove_from_sprite_lists()
+            self.coins_collected += 1
+            self.player_scale += 0.015
+            
+            # Уменьшаем счетчик смертей (если он не равен нулю)
+            if self.death_count > 0:
+                self.death_count -= 1
+            
+            if self.coin_sound:
+                arcade.play_sound(self.coin_sound)
+            
+            if self.player_scale > self.initial_scale:
+                self.player_scale = self.initial_scale
+        
+        # Переход на уровень 2 при сборе всех монеток
+        if (self.current_level == 1 and 
+            len(self.coins_list) == 0 and 
+            self.portal_list and 
+            arcade.check_for_collision_with_list(player, self.portal_list)):
+            self.load_level(2)
+            return
+                
+        # Столкновение с опасностями
         if self.spikes_list and arcade.check_for_collision_with_list(player, self.spikes_list):
             self.death_count += 1
-            self.player_scale -= 0.005  # Уменьшаем размер игрока
+            self.player_scale -= 0.005
             
             if self.death_count >= 3:
-                self.setup_menu()  # Возвращаем в меню после 3 смертей
+                self.setup_menu()
             else:
-                self.load_level(self.current_level)  # Респавн на текущем уровне
+                self.load_level(self.current_level)
             return
         
         if self.current_level == 2 and self.water_list:
@@ -367,11 +433,6 @@ class MyGame(arcade.Window):
                     self.setup_menu()
                 else:
                     self.load_level(2)
-                return
-        
-        if self.current_level == 1 and self.portal_list:
-            if arcade.check_for_collision_with_list(player, self.portal_list):
-                self.load_level(2)
                 return
 
     def on_mouse_press(self, x, y, button, modifiers):
@@ -399,7 +460,7 @@ class MyGame(arcade.Window):
             hasattr(self.player_list[0], 'can_jump') and 
             self.player_list[0].can_jump):
             
-            self.player_list[0].change_y = JUMP_FORCE
+            self.player_list[0].change_y = JUMP_FORCE  # Увеличенная сила прыжка
             self.player_list[0].can_jump = False
             if self.jump_sound:
                 arcade.play_sound(self.jump_sound)
