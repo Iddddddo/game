@@ -49,11 +49,11 @@
             "scaleInEditor": 1
         },
         "map1.json": {
-            "scale": 0.33,
-            "selectedLayer": 9,
+            "scale": 1,
+            "selectedLayer": 7,
             "viewCenter": {
-                "x": 204.54545454545456,
-                "y": 389.39393939393926
+                "x": 562,
+                "y": 416.5
             }
         },
         "map1.tsx": {
@@ -62,7 +62,7 @@
         },
         "map2.json": {
             "scale": 1,
-            "selectedLayer": 3,
+            "selectedLayer": 5,
             "viewCenter": {
                 "x": 651,
                 "y": 382.5
@@ -111,8 +111,8 @@
     ],
     "project": "map.tiled-project",
     "recentFiles": [
-        "map3.json",
         "coin1.tsx",
+        "map3.json",
         "map1.json",
         "map2.json",
         "map1.tsx",
