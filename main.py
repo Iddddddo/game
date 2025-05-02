@@ -26,7 +26,7 @@ class MyGame(arcade.Window):
         self.portal_list = arcade.SpriteList()
         self.spikes_list = arcade.SpriteList()
         self.water_list = arcade.SpriteList()
-        self.lilypads_list = arcade.SpriteList()  # Список для платформ-лилий
+        self.lilypads_list = arcade.SpriteList()
         
         # Звуки
         self.game_music = None
@@ -39,11 +39,16 @@ class MyGame(arcade.Window):
             'player_left': None,
             'backgrounds': {},
             'menu_bg': None,
-            'lilypad': None  # Текстура для лилии
+            'lilypad': None
         }
         
         # Направление игрока
         self.player_facing_right = True
+        
+        # Статистика игрока
+        self.player_scale = 0.02  # Начальный размер игрока
+        self.death_count = 0      # Счетчик смертей
+        self.initial_scale = 0.02  # Исходный размер для сброса
         
         # Предзагрузка ресурсов
         self.preload_resources()
@@ -67,23 +72,19 @@ class MyGame(arcade.Window):
 
     def preload_resources(self):
         """Предзагрузка всех необходимых ресурсов"""
-        # Загрузка звуков
         try:
             self.game_music = arcade.load_sound("sounds/menu.wav")
             self.jump_sound = arcade.load_sound("sounds/jump.wav")
         except Exception as e:
             print(f"Ошибка загрузки звуков: {e}")
 
-        # Предзагрузка текстур игрока
         try:
             self.preloaded_textures['player_right'] = arcade.load_texture("images/big2.png")
             self.preloaded_textures['player_left'] = arcade.load_texture("images/big2z.png")
-            # Загрузка текстуры лилии
             self.preloaded_textures['lilypad'] = arcade.load_texture("images/lilypad.png")
         except Exception as e:
             print(f"Ошибка загрузки текстур: {e}")
 
-        # Предзагрузка фонов уровней
         for level in [1, 2]:
             path = f"images/loc{level}.png"
             if os.path.exists(path):
@@ -92,7 +93,6 @@ class MyGame(arcade.Window):
                 except Exception as e:
                     print(f"Ошибка загрузки фона уровня {level}: {e}")
 
-        # Предзагрузка фона меню
         try:
             self.preloaded_textures['menu_bg'] = arcade.load_texture("images/menu.png")
         except Exception as e:
@@ -100,11 +100,10 @@ class MyGame(arcade.Window):
 
     def create_lilypads(self):
         """Создание платформ-лилий для второго уровня"""
-        # Координаты для трех лилий (можно изменить под свои нужды)
         lily_positions = [
-            (470, 250),  # Первая лилия
-            (600, 250),  # Вторая лилия
-            (500, 50)   # Третья лилия
+            (480, 250),
+            (600, 250),
+            (900, 500)
         ]
         
         for x, y in lily_positions:
@@ -115,7 +114,6 @@ class MyGame(arcade.Window):
             lilypad.scale = 0.1
             self.lilypads_list.append(lilypad)
         
-        # Добавляем лилии в список платформ для физики
         self.platforms_list.extend(self.lilypads_list)
 
     def start_music(self):
@@ -127,6 +125,10 @@ class MyGame(arcade.Window):
         """Инициализация меню"""
         self.game_state = "MENU"
         self.menu_background_list.clear()
+        
+        # Сброс статистики при возврате в меню
+        self.player_scale = self.initial_scale
+        self.death_count = 0
         
         if self.preloaded_textures['menu_bg']:
             bg = arcade.Sprite()
@@ -152,7 +154,7 @@ class MyGame(arcade.Window):
         self.water_list = arcade.SpriteList()
         self.lilypads_list = arcade.SpriteList()
 
-        # Загрузка фона из предзагруженных текстур
+        # Загрузка фона
         if level_num in self.preloaded_textures['backgrounds']:
             bg = arcade.Sprite()
             bg.texture = self.preloaded_textures['backgrounds'][level_num]
@@ -200,17 +202,16 @@ class MyGame(arcade.Window):
         if level_num == 2:
             self.create_lilypads()
 
-        # Создание игрока из предзагруженных текстур
+        # Создание игрока с учетом текущего размера
         if self.preloaded_textures['player_right']:
             player = arcade.Sprite()
             player.texture = self.preloaded_textures['player_right']
-            player.scale = 0.02
-            player.center_x = 100 if level_num == 1 else 50
-            player.center_y = 400 if level_num == 1 else 380
+            player.scale = self.player_scale
+            player.center_x = 35 if level_num == 1 else 50
+            player.center_y = 100 if level_num == 1 else 380
             self.player_list.append(player)
             self.player_facing_right = True
         else:
-            # Запасной вариант
             player = arcade.SpriteCircle(30, arcade.color.BLUE)
             player.center_x = 100
             player.center_y = 400
@@ -220,7 +221,7 @@ class MyGame(arcade.Window):
         if self.player_list and (self.platforms_list or self.lilypads_list):
             self.physics_engine = arcade.PhysicsEnginePlatformer(
                 self.player_list[0],
-                platforms=self.platforms_list,  # Включает обычные платформы и лилии
+                platforms=self.platforms_list,
                 gravity_constant=GRAVITY
             )
 
@@ -289,7 +290,6 @@ class MyGame(arcade.Window):
             if self.current_level == 2:
                 if self.water_list:
                     self.water_list.draw()
-                # Отрисовываем лилии поверх воды
                 if self.lilypads_list:
                     self.lilypads_list.draw()
             
@@ -301,11 +301,10 @@ class MyGame(arcade.Window):
             
             debug_info = [
                 f"Уровень: {self.current_level}",
-                f"Фон: {'есть' if self.background_list else 'нет'}",
+                f"Размер: {self.player_scale:.3f}",
+                f"Смерти: {self.death_count}/3",
                 f"Платформы: {len(self.platforms_list)}",
-                f"Лилии: {len(self.lilypads_list)}",
-                f"Шипы: {len(self.spikes_list)}",
-                f"Игрок: {'есть' if self.player_list else 'нет'}"
+                f"Лилии: {len(self.lilypads_list)}"
             ]
             
             for i, text in enumerate(debug_info):
@@ -319,10 +318,8 @@ class MyGame(arcade.Window):
         elif self.game_state == "GAME" and self.player_list:
             player = self.player_list[0]
             
-            # Сохраняем предыдущее направление
             prev_facing = self.player_facing_right
             
-            # Определяем направление движения
             player.change_x = 0
             if arcade.key.LEFT in self.held_keys:
                 player.change_x = -PLAYER_SPEED
@@ -331,50 +328,53 @@ class MyGame(arcade.Window):
                 player.change_x = PLAYER_SPEED
                 self.player_facing_right = True
             
-            # Если направление изменилось - обновляем текстуру
             if prev_facing != self.player_facing_right:
                 self.update_player_texture()
             
-            # Границы экрана
             if player.left < 0:
                 player.left = 0
             if player.right > WIDTH:
                 player.right = WIDTH
             
-            # Физика
             if self.physics_engine:
                 self.physics_engine.update()
                 player.can_jump = self.physics_engine.can_jump()
             
-            # Обработка столкновений
             self.handle_collisions()
 
     def handle_collisions(self):
-        """Обработка столкновений игрока с объектами"""
         if not self.player_list:
             return
             
         player = self.player_list[0]
         
-        # Столкновение с шипами
         if self.spikes_list and arcade.check_for_collision_with_list(player, self.spikes_list):
-            self.load_level(self.current_level)
+            self.death_count += 1
+            self.player_scale -= 0.005  # Уменьшаем размер игрока
+            
+            if self.death_count >= 3:
+                self.setup_menu()  # Возвращаем в меню после 3 смертей
+            else:
+                self.load_level(self.current_level)  # Респавн на текущем уровне
             return
         
-        # Столкновение с водой (на втором уровне)
         if self.current_level == 2 and self.water_list:
             if arcade.check_for_collision_with_list(player, self.water_list):
-                self.load_level(2)
+                self.death_count += 1
+                self.player_scale -= 0.001
+                
+                if self.death_count >= 3:
+                    self.setup_menu()
+                else:
+                    self.load_level(2)
                 return
         
-        # Столкновение с порталом (на первом уровне)
         if self.current_level == 1 and self.portal_list:
             if arcade.check_for_collision_with_list(player, self.portal_list):
                 self.load_level(2)
                 return
 
     def on_mouse_press(self, x, y, button, modifiers):
-        """Обработка нажатия кнопки мыши"""
         if self.game_state == "MENU" and button == arcade.MOUSE_BUTTON_LEFT:
             half_width = self.button_width / 2
             half_height = self.button_height / 2
@@ -391,7 +391,6 @@ class MyGame(arcade.Window):
                 self.load_level(1)
 
     def on_key_press(self, key, modifiers):
-        """Обработка нажатия клавиш"""
         self.held_keys.add(key)
         
         if (key == arcade.key.SPACE and 
@@ -406,7 +405,6 @@ class MyGame(arcade.Window):
                 arcade.play_sound(self.jump_sound)
 
     def on_key_release(self, key, modifiers):
-        """Обработка отпускания клавиш"""
         if key in self.held_keys:
             self.held_keys.remove(key)
 
