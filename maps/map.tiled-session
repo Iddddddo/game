@@ -50,7 +50,7 @@
         },
         "map1.json": {
             "scale": 1,
-            "selectedLayer": 7,
+            "selectedLayer": 8,
             "viewCenter": {
                 "x": 562,
                 "y": 416.5
@@ -70,7 +70,7 @@
         },
         "map3.json": {
             "scale": 2,
-            "selectedLayer": 2,
+            "selectedLayer": 3,
             "viewCenter": {
                 "x": 996,
                 "y": 542.75

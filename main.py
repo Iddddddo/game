@@ -2,13 +2,57 @@ import arcade
 import math
 import os
 import time
+from typing import Dict, List, Set, Optional
 
 # Константы
-WIDTH, HEIGHT = 1280, 768
-TITLE = "Mini Adventure"
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 768
+SCREEN_TITLE = "Mini Adventure"
 PLAYER_SPEED = 5
 JUMP_FORCE = 21
 GRAVITY = 0.9
+PLAYER_SCALE = 0.02
+COIN_SCALE = 0.05
+LILYPAD_SCALE = 0.1
+PORTAL_SCALE = 0.5
+
+class Lilypad(arcade.Sprite):
+    def __init__(self, texture, scale=1.0):
+        super().__init__(texture, scale)
+        self.stand_time = 0  # Время, которое игрок стоит на кувшинке
+        self.disappear_time = 0  # Время исчезновения
+        self.original_y = 0  # Исходная позиция Y
+        self.is_disappearing = False
+        self.alpha = 255  # Прозрачность спрайта
+
+    def update(self):
+        # Анимация покачивания
+        if self.stand_time > 1.0 and not self.is_disappearing and self.alpha == 255:
+            # Покачивание (синусоидальное движение)
+            self.center_y = self.original_y + math.sin(time.time() * 10) * 3
+
+        # Проверка на исчезновение
+        if self.stand_time > 2.0 and not self.is_disappearing and self.alpha == 255:
+            self.is_disappearing = True
+            self.disappear_time = time.time()
+
+        # Процесс исчезновения
+        if self.is_disappearing:
+            fade_progress = (time.time() - self.disappear_time) / 1.0
+            self.alpha = max(0, int(255 * (1 - fade_progress)))
+            
+            # Когда полностью исчезли
+            if self.alpha == 0:
+                self.is_disappearing = False
+                self.stand_time = 0
+                self.center_y = self.original_y
+                # Запланировать появление через 1 секунду
+                self.disappear_time = time.time() + 1.0
+
+        # Процесс появления
+        elif self.alpha < 255:
+            if time.time() > self.disappear_time:
+                self.alpha = min(255, self.alpha + 5)
 
 class MyGame(arcade.Window):
     def __init__(self, width, height, title):
@@ -30,7 +74,7 @@ class MyGame(arcade.Window):
         self.lilypads_list = arcade.SpriteList()
         self.coins_list = arcade.SpriteList()
         self.end_list = arcade.SpriteList()
-        self.intro_player_list = arcade.SpriteList()  # Новый спрайтлист для игрока в интро
+        self.intro_player_list = arcade.SpriteList()
 
         # Состояние монеток
         self.coin_positions = {
@@ -45,6 +89,7 @@ class MyGame(arcade.Window):
         self.music_player = None
         self.jump_sound = None
         self.coin_sound = None
+        self.lilypad_sound = None
         
         # Текстуры
         self.preloaded_textures = {
@@ -82,8 +127,8 @@ class MyGame(arcade.Window):
         self.physics_engine = None
         
         # Параметры кнопки/текста
-        self.button_x = WIDTH // 2
-        self.button_y = HEIGHT // 2
+        self.button_x = SCREEN_WIDTH // 2
+        self.button_y = SCREEN_HEIGHT // 2
         self.button_width = 300
         self.button_height = 100
         self.button_angle = 0
@@ -94,6 +139,8 @@ class MyGame(arcade.Window):
 
     def preload_resources(self):
         """Предзагрузка всех необходимых ресурсов"""
+        print("\n=== LOADING RESOURCES ===")
+        
         # Создаем папки если их нет
         os.makedirs("images", exist_ok=True)
         os.makedirs("sounds", exist_ok=True)
@@ -107,6 +154,8 @@ class MyGame(arcade.Window):
                 self.jump_sound = arcade.load_sound("sounds/jump.wav")
             if os.path.exists("sounds/coin.wav"):
                 self.coin_sound = arcade.load_sound("sounds/coin.wav")
+            if os.path.exists("sounds/lilypad.wav"):
+                self.lilypad_sound = arcade.load_sound("sounds/lilypad.wav")
         except Exception as e:
             print(f"Ошибка загрузки звуков: {e}")
 
@@ -145,11 +194,10 @@ class MyGame(arcade.Window):
         ]
         
         for x, y in lily_positions:
-            lilypad = arcade.Sprite()
-            lilypad.texture = self.preloaded_textures['lilypad']
+            lilypad = Lilypad(self.preloaded_textures['lilypad'], LILYPAD_SCALE)
             lilypad.center_x = x
             lilypad.center_y = y
-            lilypad.scale = 0.1
+            lilypad.original_y = y
             self.lilypads_list.append(lilypad)
         
         self.platforms_list.extend(self.lilypads_list)
@@ -164,7 +212,7 @@ class MyGame(arcade.Window):
         portal.texture = self.preloaded_textures['portal']
         portal.center_x = x
         portal.center_y = y
-        portal.scale = 0.5
+        portal.scale = PORTAL_SCALE
         self.portal_list.append(portal)
 
     def create_coins(self, reset_coins=False):
@@ -185,7 +233,7 @@ class MyGame(arcade.Window):
                 coin.texture = self.preloaded_textures['coin']
                 coin.center_x = x
                 coin.center_y = y
-                coin.scale = 0.05
+                coin.scale = COIN_SCALE
                 coin.index = i
                 self.coins_list.append(coin)
 
@@ -201,7 +249,7 @@ class MyGame(arcade.Window):
         """Инициализация меню"""
         self.game_state = "MENU"
         self.menu_background_list.clear()
-        self.intro_player_list.clear()  # Очищаем спрайт игрока в интро
+        self.intro_player_list.clear()
         
         # Сброс параметров
         self.player_scale = self.initial_scale
@@ -215,10 +263,10 @@ class MyGame(arcade.Window):
         if self.preloaded_textures['menu_bg']:
             bg = arcade.Sprite()
             bg.texture = self.preloaded_textures['menu_bg']
-            bg.width = WIDTH
-            bg.height = HEIGHT
-            bg.center_x = WIDTH // 2
-            bg.center_y = HEIGHT // 2
+            bg.width = SCREEN_WIDTH
+            bg.height = SCREEN_HEIGHT
+            bg.center_x = SCREEN_WIDTH // 2
+            bg.center_y = SCREEN_HEIGHT // 2
             self.menu_background_list.append(bg)
         else:
             self.background_color = arcade.color.BLACK
@@ -236,8 +284,8 @@ class MyGame(arcade.Window):
             player = arcade.Sprite()
             player.texture = self.preloaded_textures['player_right']
             player.scale = 0.1
-            player.center_x = WIDTH // 2
-            player.center_y = HEIGHT // 2
+            player.center_x = SCREEN_WIDTH // 2
+            player.center_y = SCREEN_HEIGHT // 2
             self.intro_player_list.append(player)
 
     def show_victory(self):
@@ -267,10 +315,10 @@ class MyGame(arcade.Window):
         if level_num in self.preloaded_textures['backgrounds'] and self.preloaded_textures['backgrounds'][level_num]:
             bg = arcade.Sprite()
             bg.texture = self.preloaded_textures['backgrounds'][level_num]
-            bg.width = WIDTH
-            bg.height = HEIGHT
-            bg.center_x = WIDTH // 2
-            bg.center_y = HEIGHT // 2
+            bg.width = SCREEN_WIDTH
+            bg.height = SCREEN_HEIGHT
+            bg.center_x = SCREEN_WIDTH // 2
+            bg.center_y = SCREEN_HEIGHT // 2
             self.background_list.append(bg)
         else:
             self.background_color = arcade.color.SKY_BLUE
@@ -407,14 +455,13 @@ class MyGame(arcade.Window):
             )
             
         elif self.game_state == "INTRO":
-            arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, arcade.color.BLACK)
+            arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, 0, SCREEN_HEIGHT, arcade.color.BLACK)
             
-            # Отрисовка игрока через спрайтлист
             self.intro_player_list.draw()
             
             arcade.draw_text(
                 "Я должна собрать рассыпанные амулеты\nи отнести их домой,\nчтобы предотвратить страшное",
-                WIDTH // 2, HEIGHT // 2 + 100,
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 100,
                 arcade.color.WHITE, 24,
                 anchor_x="center", anchor_y="center",
                 align="center",
@@ -422,54 +469,54 @@ class MyGame(arcade.Window):
             )
             
             if self.fade_alpha > 0:
-                arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, (0, 0, 0, self.fade_alpha))
+                arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, 0, SCREEN_HEIGHT, (0, 0, 0, self.fade_alpha))
             
         elif self.game_state == "GAME":
             self.background_list.draw()
             self.back_decor_list.draw()
-            self.platforms_list.draw()
             self.spikes_list.draw()
             
             if self.current_level == 2:
                 self.water_list.draw()
-                self.lilypads_list.draw()
+                self.lilypads_list.draw()  # Отрисовка кувшинок через стандартный спрайтлист
             
             self.portal_list.draw()
             self.end_list.draw()
             self.coins_list.draw()
             self.player_list.draw()
+            self.platforms_list.draw()  # Платформы рисуются поверх всего
             
             # Статистика
             arcade.draw_text(
-                f"Уровень: {self.current_level}", 10, HEIGHT - 30, 
+                f"Уровень: {self.current_level}", 10, SCREEN_HEIGHT - 30, 
                 arcade.color.WHITE, 16
             )
             arcade.draw_text(
-                f"Размер: {self.player_scale:.3f}", 10, HEIGHT - 60, 
+                f"Размер: {self.player_scale:.3f}", 10, SCREEN_HEIGHT - 60, 
                 arcade.color.WHITE, 16
             )
             arcade.draw_text(
-                f"Смерти: {self.death_count}/3", 10, HEIGHT - 90, 
+                f"Смерти: {self.death_count}/3", 10, SCREEN_HEIGHT - 90, 
                 arcade.color.WHITE, 16
             )
             arcade.draw_text(
                 f"Монетки: {len(self.collected_coins[self.current_level])}/{self.total_coins}", 
-                10, HEIGHT - 120, arcade.color.WHITE, 16
+                10, SCREEN_HEIGHT - 120, arcade.color.WHITE, 16
             )
         
         elif self.game_state == "VICTORY":
-            arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, arcade.color.BLACK)
+            arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, 0, SCREEN_HEIGHT, arcade.color.BLACK)
             
             arcade.draw_text(
                 "Победа, вы спасли мир!",
-                WIDTH // 2, HEIGHT // 2,
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2,
                 arcade.color.WHITE, 40,
                 anchor_x="center", anchor_y="center",
                 bold=True
             )
             
             if self.fade_alpha > 0:
-                arcade.draw_lrbt_rectangle_filled(0, WIDTH, 0, HEIGHT, (0, 0, 0, self.fade_alpha))
+                arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, 0, SCREEN_HEIGHT, (0, 0, 0, self.fade_alpha))
 
     def on_update(self, delta_time):
         """Логика игры"""
@@ -501,12 +548,24 @@ class MyGame(arcade.Window):
             
             if player.left < 0:
                 player.left = 0
-            if player.right > WIDTH:
-                player.right = WIDTH
+            if player.right > SCREEN_WIDTH:
+                player.right = SCREEN_WIDTH
             
             if self.physics_engine:
                 self.physics_engine.update()
                 player.can_jump = self.physics_engine.can_jump()
+            
+            # Обновление кувшинок и проверка стояния на них
+            for lilypad in self.lilypads_list:
+                # Проверяем, стоит ли игрок на этой кувшинке
+                if (arcade.check_for_collision(player, lilypad) and 
+                    player.change_y == 0 and 
+                    player.bottom <= lilypad.top + 5):  # Небольшой допуск
+                    lilypad.stand_time += delta_time
+                else:
+                    lilypad.stand_time = 0
+                
+                lilypad.update()
             
             self.handle_collisions()
         
@@ -600,7 +659,8 @@ class MyGame(arcade.Window):
         """Обработка нажатия клавиш"""
         self.held_keys.add(key)
         
-        if (key == arcade.key.SPACE and 
+        # Прыжок при нажатии SPACE или стрелки вверх
+        if ((key == arcade.key.SPACE or key == arcade.key.UP) and 
             self.game_state == "GAME" and 
             self.player_list and 
             hasattr(self.player_list[0], 'can_jump') and 
@@ -617,5 +677,5 @@ class MyGame(arcade.Window):
             self.held_keys.remove(key)
 
 if __name__ == "__main__":
-    game = MyGame(WIDTH, HEIGHT, TITLE)
+    game = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
     arcade.run()
