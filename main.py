@@ -19,40 +19,45 @@ PORTAL_SCALE = 0.5
 class Lilypad(arcade.Sprite):
     def __init__(self, texture, scale=1.0):
         super().__init__(texture, scale)
-        self.stand_time = 0  # Время, которое игрок стоит на кувшинке
-        self.disappear_time = 0  # Время исчезновения
-        self.original_y = 0  # Исходная позиция Y
+        self.stand_time = 0
+        self.disappear_start = 0
         self.is_disappearing = False
-        self.alpha = 255  # Прозрачность спрайта
-
+        self.original_y = self.center_y
+        self.current_state = "normal"  # normal, shaking, disappearing, reappearing
+        
     def update(self):
-        # Анимация покачивания
-        if self.stand_time > 1.0 and not self.is_disappearing and self.alpha == 255:
-            # Покачивание (синусоидальное движение)
-            self.center_y = self.original_y + math.sin(time.time() * 10) * 3
-
-        # Проверка на исчезновение
-        if self.stand_time > 2.0 and not self.is_disappearing and self.alpha == 255:
-            self.is_disappearing = True
-            self.disappear_time = time.time()
-
-        # Процесс исчезновения
-        if self.is_disappearing:
-            fade_progress = (time.time() - self.disappear_time) / 1.0
-            self.alpha = max(0, int(255 * (1 - fade_progress)))
+        # Обновление состояния кувшинки
+        if self.current_state == "normal" and self.stand_time > 1.0:
+            self.current_state = "shaking"
             
-            # Когда полностью исчезли
-            if self.alpha == 0:
-                self.is_disappearing = False
+        elif self.current_state == "shaking" and self.stand_time > 2.0:
+            self.current_state = "disappearing"
+            self.disappear_start = time.time()
+            
+        elif self.current_state == "disappearing":
+            # Полное исчезновение через 1 секунду
+            if time.time() - self.disappear_start > 1.0:
+                self.current_state = "reappearing"
+                self.disappear_start = time.time()
                 self.stand_time = 0
+                self.alpha = 0  # Полностью прозрачная
+            else:
+                # Плавное исчезновение
+                self.alpha = int(255 * (1 - (time.time() - self.disappear_start)))
+                
+        elif self.current_state == "reappearing":
+            # Появление через 1 секунду
+            if time.time() - self.disappear_start > 1.0:
+                self.current_state = "normal"
+                self.alpha = 255  # Полностью видимая
                 self.center_y = self.original_y
-                # Запланировать появление через 1 секунду
-                self.disappear_time = time.time() + 1.0
-
-        # Процесс появления
-        elif self.alpha < 255:
-            if time.time() > self.disappear_time:
-                self.alpha = min(255, self.alpha + 5)
+            else:
+                # Плавное появление
+                self.alpha = int(255 * ((time.time() - self.disappear_start)))
+                
+        # Анимация покачивания
+        if self.current_state == "shaking":
+            self.center_y = self.original_y + math.sin(time.time() * 10) * 3
 
 class MyGame(arcade.Window):
     def __init__(self, width, height, title):
@@ -200,6 +205,7 @@ class MyGame(arcade.Window):
             lilypad.original_y = y
             self.lilypads_list.append(lilypad)
         
+        # Добавляем кувшинки в список платформ для физического движка
         self.platforms_list.extend(self.lilypads_list)
 
     def create_portal(self, x, y):
@@ -380,14 +386,14 @@ class MyGame(arcade.Window):
             
             # Стартовые позиции
             if level_num == 1:
-                player.center_x = 100
-                player.center_y = 400
+                player.center_x = 50
+                player.center_y = 130
             elif level_num == 2:
                 player.center_x = 50
                 player.center_y = 380
             else:
-                player.center_x = 100
-                player.center_y = 400
+                player.center_x = 50
+                player.center_y = 100
                 
             self.player_list.append(player)
             self.player_facing_right = True
@@ -557,14 +563,17 @@ class MyGame(arcade.Window):
             
             # Обновление кувшинок и проверка стояния на них
             for lilypad in self.lilypads_list:
-                # Проверяем, стоит ли игрок на этой кувшинке
+                # Проверяем, стоит ли игрок на кувшинке
                 if (arcade.check_for_collision(player, lilypad) and 
                     player.change_y == 0 and 
-                    player.bottom <= lilypad.top + 5):  # Небольшой допуск
+                    player.bottom <= lilypad.top + 5 and
+                    lilypad.current_state != "disappearing" and
+                    lilypad.current_state != "reappearing"):
+                    
                     lilypad.stand_time += delta_time
                 else:
                     lilypad.stand_time = 0
-                
+                    
                 lilypad.update()
             
             self.handle_collisions()
